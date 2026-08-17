@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { buildDashboardData } from './analytics/dashboardBuilder.js';
+import { buildDashboardResponse } from './analytics/dashboardBuilder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,7 +23,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/dashboard', async (req, res) => {
   try {
-    const data = await buildDashboardData();
+    const data = await buildDashboardResponse();
     res.json(data);
   } catch (error) {
     console.error('Dashboard build failed:', error);

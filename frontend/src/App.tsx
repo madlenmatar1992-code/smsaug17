@@ -6,9 +6,9 @@ type DashboardApi = {
   dataQuality: Record<string, number>;
   npsSummary: Record<string, number>;
   hospitalSummary: { hospital: string; feedbackCount: number; nps: number; promoterPct: number; detractorPct: number; positivePct: number; negativePct: number }[];
+  issueSummary: { totalIssueRows: number; byTheme: { theme: string; count: number }[]; bySentiment: Record<string, number> };
   records: any[];
-  expandedRows: any[];
-  metadata: { lastRefresh: string; sourceFiles: string[] };
+  metadata: { lastRefresh: string; sourceFiles: string[]; recordCount: number; issueRowCount: number };
 };
 
 const COLORS = {

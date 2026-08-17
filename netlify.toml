@@ -1,0 +1,21 @@
+[build]
+  command = "npm --prefix frontend install && npm --prefix frontend run build"
+  publish = "frontend/dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  # The survey workbooks are read at request time, so they must be shipped
+  # inside the function bundle.
+  included_files = ["data/**"]
+  # xlsx resolves some of its Node built-ins through dynamic require(), which
+  # cannot be inlined into an ES module bundle. Ship it as a real dependency
+  # instead of bundling it.
+  external_node_modules = ["xlsx"]
+
+# Single-page app fallback. API routes are declared in each function's
+# `config.path`, which is matched before this rule.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
