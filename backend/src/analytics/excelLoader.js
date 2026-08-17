@@ -3,10 +3,60 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '../../..');
-const DATA_DIR = path.resolve(projectRoot, 'data');
+// Deliberately not named __filename/__dirname: the serverless bundler injects
+// its own shims for those identifiers, which collides with a local declaration.
+const moduleFile = fileURLToPath(import.meta.url);
+const moduleDir = path.dirname(moduleFile);
+const projectRoot = path.resolve(moduleDir, '../../..');
+
+const OP_FILE = 'Day wise OP Survey Report SMS OP Sharjha Cluster.xlsx';
+const IP_FILE = 'Day wise IP Survey Report SMS Sharjha Cluster.xlsx';
+
+export const SOURCE_FILES = [OP_FILE, IP_FILE];
+
+// The loader runs both from the local Express server and from a bundled
+// serverless function, where the module no longer sits at a known depth below
+// the project root. Probe the plausible locations and use the first one that
+// actually holds a workbook.
+function candidateDataDirs() {
+  const candidates = [];
+
+  if (process.env.DATA_DIR) {
+    candidates.push(path.resolve(process.cwd(), process.env.DATA_DIR));
+  }
+
+  candidates.push(path.resolve(projectRoot, 'data'));
+  candidates.push(path.resolve(process.cwd(), 'data'));
+
+  if (process.env.LAMBDA_TASK_ROOT) {
+    candidates.push(path.resolve(process.env.LAMBDA_TASK_ROOT, 'data'));
+  }
+
+  // Walk up from this module looking for a sibling `data` directory.
+  let current = moduleDir;
+  for (let depth = 0; depth < 8; depth += 1) {
+    candidates.push(path.join(current, 'data'));
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function resolveDataDir() {
+  const candidates = candidateDataDirs();
+
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, OP_FILE)) || fs.existsSync(path.join(dir, IP_FILE))) {
+      return dir;
+    }
+  }
+
+  throw new Error(
+    `Unable to locate the survey data directory. Looked in:\n${candidates.join('\n')}`
+  );
+}
 
 const normalizeCell = (value) => {
   if (value === null || value === undefined) return '';
@@ -23,26 +73,29 @@ const toSafeString = (value) => {
 };
 
 export function loadWorkbookRecords() {
+  const dataDir = resolveDataDir();
   const files = [
     {
       type: 'OP',
-      fileName: 'Day wise OP Survey Report SMS OP Sharjha Cluster.xlsx'
+      fileName: OP_FILE
     },
     {
       type: 'IP',
-      fileName: 'Day wise IP Survey Report SMS Sharjha Cluster.xlsx'
+      fileName: IP_FILE
     }
   ];
 
   const workbookData = [];
 
   for (const fileInfo of files) {
-    const filePath = path.join(DATA_DIR, fileInfo.fileName);
+    const filePath = path.join(dataDir, fileInfo.fileName);
     if (!fs.existsSync(filePath)) {
       throw new Error(`Missing Excel file: ${fileInfo.fileName}`);
     }
 
-    const workbook = XLSX.readFile(filePath);
+    // Read through a buffer rather than XLSX.readFile so the parser does not
+    // need filesystem access of its own once bundled.
+    const workbook = XLSX.read(fs.readFileSync(filePath), { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });

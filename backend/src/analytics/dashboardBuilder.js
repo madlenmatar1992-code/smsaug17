@@ -1,4 +1,4 @@
-import { loadWorkbookRecords } from './excelLoader.js';
+import { loadWorkbookRecords, SOURCE_FILES } from './excelLoader.js';
 import { normalizeNPS, buildDataQualitySummary } from './dataQuality.js';
 import { getNpsSegment, calculateNps } from './npsUtils.js';
 import { classifySentiment } from './sentimentUtils.js';
@@ -138,11 +138,72 @@ export async function buildDashboardData() {
     records,
     expandedRows,
     metadata: {
-      sourceFiles: [
-        'Day wise OP Survey Report SMS OP Sharjha Cluster.xlsx',
-        'Day wise IP Survey Report SMS Sharjha Cluster.xlsx'
-      ],
+      sourceFiles: SOURCE_FILES,
       lastRefresh: new Date().toISOString()
+    }
+  };
+}
+
+// Fields the dashboard renders. The workbooks also carry patient names, mobile
+// numbers, UHIDs and every raw survey question, none of which the client needs
+// — sending them would leak patient detail into the browser and push the
+// response past the serverless payload limit.
+const CLIENT_RECORD_FIELDS = [
+  'Feedback_ID',
+  'Hospital',
+  'SurveyType',
+  'PatientType',
+  'Source',
+  'Speciality',
+  'TreatingDoctor',
+  'Location',
+  'SurveyDate',
+  'NPSScore',
+  'NPSSegment',
+  'Sentiment',
+  'Themes',
+  'PatientComment',
+  'IsCommented'
+];
+
+function summarizeIssues(expandedRows) {
+  const byTheme = new Map();
+  const bySentiment = new Map();
+
+  for (const row of expandedRows) {
+    byTheme.set(row.Theme, (byTheme.get(row.Theme) || 0) + 1);
+    bySentiment.set(row.Sentiment, (bySentiment.get(row.Sentiment) || 0) + 1);
+  }
+
+  return {
+    totalIssueRows: expandedRows.length,
+    byTheme: Array.from(byTheme, ([theme, count]) => ({ theme, count })).sort((a, b) => b.count - a.count),
+    bySentiment: Object.fromEntries(bySentiment)
+  };
+}
+
+/**
+ * Dashboard data shaped for transport to the browser: summaries in full, plus
+ * the per-record fields the UI filters and charts on. The issue-level expansion
+ * is returned as counts instead of ~2,000 verbatim rows.
+ */
+export async function buildDashboardResponse() {
+  const { records, expandedRows, ...rest } = await buildDashboardData();
+
+  return {
+    ...rest,
+    issueSummary: summarizeIssues(expandedRows),
+    records: records.map((record) => {
+      const projected = {};
+      for (const field of CLIENT_RECORD_FIELDS) {
+        projected[field] = record[field];
+      }
+      return projected;
+    }),
+    metadata: {
+      ...rest.metadata,
+      recordCount: records.length,
+      issueRowCount: expandedRows.length
     }
   };
 }
